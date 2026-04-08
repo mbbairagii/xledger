@@ -15,102 +15,56 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import type { NormalizedSheet, RowSnapshot, RowChange } from "../types/index.js";
-import { rowSnapshotsEqual } from "../parser/cellEquality.js";
 
 function orderedRows(sheet: NormalizedSheet): Array<[string, RowSnapshot]> {
   return Object.entries(sheet).sort(([a], [b]) => {
-    const rowA = parseInt(a.split("::R")[1], 10);
-    const rowB = parseInt(b.split("::R")[1], 10);
-    return rowA - rowB;
+    return parseInt(a.split("::R")[1], 10) - parseInt(b.split("::R")[1], 10);
   });
 }
 
 function hashRow(row: RowSnapshot): string {
-  const cells = Object.entries(row.cells)
+  return Object.entries(row.cells)
     .sort(([a], [b]) => a.localeCompare(b))
-    .map(([col, cell]) => `${col}:${cell.formula ?? ""}:${cell.value}:${cell.type}`)
+    .map(([col, c]) => `${col}:${c.formula ?? ""}:${c.value}:${c.type}:${c.format ?? ""}`)
     .join("|");
-  return cells;
 }
 
 type EditOp =
-  | { op: "equal";   before: [string, RowSnapshot]; after: [string, RowSnapshot] }
-  | { op: "added";   after:  [string, RowSnapshot] }
-  | { op: "deleted"; before: [string, RowSnapshot] };
+  | { op: "equal"; beforeIdx: number; afterIdx: number }
+  | { op: "added"; afterIdx: number }
+  | { op: "deleted"; beforeIdx: number };
 
-function myersDiff(
+function lcsDiff(
   before: Array<[string, RowSnapshot]>,
-  after:  Array<[string, RowSnapshot]>
+  after: Array<[string, RowSnapshot]>
 ): EditOp[] {
   const N = before.length;
   const M = after.length;
-  const MAX = N + M;
 
-  if (MAX === 0) return [];
-
-  const V: number[] = new Array(2 * MAX + 1).fill(0);
-  const trace: number[][] = [];
-
-  outer: for (let D = 0; D <= MAX; D++) {
-    trace.push([...V]);
-
-    for (let k = -D; k <= D; k += 2) {
-      const idx = k + MAX;
-      let x: number;
-
-      if (k === -D || (k !== D && V[idx - 1] < V[idx + 1])) {
-        x = V[idx + 1];       // move down
+  const dp: number[][] = Array.from({ length: N + 1 }, () => new Array(M + 1).fill(0));
+  for (let i = N - 1; i >= 0; i--) {
+    for (let j = M - 1; j >= 0; j--) {
+      if (hashRow(before[i][1]) === hashRow(after[j][1])) {
+        dp[i][j] = dp[i + 1][j + 1] + 1;
       } else {
-        x = V[idx - 1] + 1;   // move right
+        dp[i][j] = Math.max(dp[i + 1][j], dp[i][j + 1]);
       }
-
-      let y = x - k;
-
-      while (x < N && y < M && hashRow(before[x][1]) === hashRow(after[y][1])) {
-        x++; y++;
-      }
-
-      V[idx] = x;
-
-      if (x >= N && y >= M) break outer;
     }
   }
 
   const edits: EditOp[] = [];
-  let x = N;
-  let y = M;
+  let i = 0, j = 0;
 
-  for (let D = trace.length - 1; D > 0; D--) {
-    const Vprev = trace[D - 1];
-    const k = x - y;
-    const idx = k + MAX;
-
-    let prevK: number;
-    if (k === -D || (k !== D && Vprev[idx - 1] < Vprev[idx + 1])) {
-      prevK = k + 1;  // came from above (insert)
+  while (i < N || j < M) {
+    if (i < N && j < M && hashRow(before[i][1]) === hashRow(after[j][1])) {
+      edits.push({ op: "equal", beforeIdx: i, afterIdx: j });
+      i++; j++;
+    } else if (j < M && (i >= N || dp[i][j + 1] >= dp[i + 1][j])) {
+      edits.push({ op: "added", afterIdx: j });
+      j++;
     } else {
-      prevK = k - 1;  // came from left (delete)
-    }
-
-    const prevX = Vprev[prevK + MAX];
-    const prevY = prevX - prevK;
-
-    while (x > prevX + 1 && y > prevY + 1) {
-      x--; y--;
-      edits.unshift({ op: "equal", before: before[x], after: after[y] });
-    }
-
-    if (D > 0) {
-      if (x === prevX + 1 && y === prevY + 1) {
-        x--; y--;
-        edits.unshift({ op: "equal", before: before[x], after: after[y] });
-      } else if (prevK === k - 1) {
-        x--;
-        edits.unshift({ op: "deleted", before: before[x] });
-      } else {
-        y--;
-        edits.unshift({ op: "added", after: after[y] });
-      }
+      edits.push({ op: "deleted", beforeIdx: i });
+      i++;
     }
   }
 
@@ -123,43 +77,39 @@ export function diffSheet(
   afterSheet: NormalizedSheet
 ): RowChange[] {
   const beforeRows = orderedRows(beforeSheet);
-  const afterRows  = orderedRows(afterSheet);
+  const afterRows = orderedRows(afterSheet);
+  const rawEdits = lcsDiff(beforeRows, afterRows);
 
-  const edits = myersDiff(beforeRows, afterRows);
-  const changes: RowChange[] = [];
+  const deleted = new Map<string, RowChange>();
+  const added = new Map<string, RowChange>();
 
-  for (const edit of edits) {
-    switch (edit.op) {
-      case "added":
-        changes.push({
-          entity_id:  edit.after[0],
-          schema_key: "xlsx-row",
-          kind:       "added",
-          snapshot:   edit.after[1],
-        });
-        break;
-
-      case "deleted":
-        changes.push({
-          entity_id:  edit.before[0],
-          schema_key: "xlsx-row",
-          kind:       "deleted",
-          snapshot:   null,
-        });
-        break;
-
-      case "equal":
-        if (!rowSnapshotsEqual(edit.before[1], edit.after[1])) {
-          changes.push({
-            entity_id:  edit.after[0],
-            schema_key: "xlsx-row",
-            kind:       "modified",
-            snapshot:   edit.after[1],
-          });
-        }
-        break;
+  for (const edit of rawEdits) {
+    if (edit.op === "deleted") {
+      const [entityId] = beforeRows[edit.beforeIdx];
+      deleted.set(entityId, { entity_id: entityId, schema_key: "xlsx-row", kind: "deleted", snapshot: null });
+    } else if (edit.op === "added") {
+      const [entityId, snapshot] = afterRows[edit.afterIdx];
+      added.set(entityId, { entity_id: entityId, schema_key: "xlsx-row", kind: "added", snapshot });
     }
   }
 
-  return changes;
+  const changes: RowChange[] = [];
+
+  for (const [entityId, del] of deleted) {
+    if (added.has(entityId)) {
+      const add = added.get(entityId)!;
+      changes.push({ entity_id: entityId, schema_key: "xlsx-row", kind: "modified", snapshot: add.snapshot });
+      added.delete(entityId);
+    } else {
+      changes.push(del);
+    }
+  }
+
+  for (const add of added.values()) {
+    changes.push(add);
+  }
+
+  return changes.sort((a, b) =>
+    parseInt(a.entity_id.split("::R")[1], 10) - parseInt(b.entity_id.split("::R")[1], 10)
+  );
 }
