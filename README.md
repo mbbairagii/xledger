@@ -7,8 +7,6 @@ Excel's built-in compare is a GUI nightmare. This module reads two `.xlsx` files
 and tells you exactly which rows changed, what the old values were, and what the
 new ones are — in plain JSON you can work with.
 
-This is the standalone core of a Lix plugin I'm building. More on that below.
-
 ---
 
 ## What it does
