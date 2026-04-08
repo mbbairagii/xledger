@@ -1,0 +1,23 @@
+{
+  "name": "xledger-parser",
+  "version": "0.1.0",
+  "description": "Standalone SheetJS parser/normalizer — future core of the Lix xlsx plugin",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "test": "node --experimental-vm-modules node_modules/.bin/jest",
+    "dev": "tsc --watch"
+  },
+  "dependencies": {
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "@jest/globals": "^29.0.0",
+    "@types/node": "^20.0.0",
+    "jest": "^29.0.0",
+    "ts-jest": "^29.4.9",
+    "typescript": "^5.4.0"
+  }
+}

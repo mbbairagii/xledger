@@ -1,0 +1,20 @@
+export type CellType = "number" | "string" | "boolean" | "formula" | "error" | "empty";
+export interface CellSnapshot {
+    value: string | number | boolean | null;
+    formula: string | null;
+    type: CellType;
+    format?: string | null;
+}
+export interface RowSnapshot {
+    cells: Record<string, CellSnapshot>;
+}
+export type NormalizedSheet = Record<string, RowSnapshot>;
+export type NormalizedWorkbook = Record<string, NormalizedSheet>;
+export type ChangeKind = "added" | "modified" | "deleted";
+export interface RowChange {
+    entity_id: string;
+    schema_key: "xlsx-row";
+    kind: ChangeKind;
+    snapshot: RowSnapshot | null;
+}
+//# sourceMappingURL=index.d.ts.map
