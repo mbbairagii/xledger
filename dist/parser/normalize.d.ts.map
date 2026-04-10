@@ -1,1 +1,0 @@
-{"version":3,"file":"normalize.d.ts","sourceRoot":"","sources":["../../src/parser/normalize.ts"],"names":[],"mappings":"AAQA,OAAO,KAAK,EAAE,SAAS,EAAc,MAAM,MAAM,CAAC;AAElD,OAAO,KAAK,EAA0B,eAAe,EAAe,MAAM,mBAAmB,CAAC;AA4B9F,wBAAgB,kBAAkB,CAAC,KAAK,EAAE,SAAS,EAAE,SAAS,EAAE,MAAM,GAAG,eAAe,CA0BvF"}
